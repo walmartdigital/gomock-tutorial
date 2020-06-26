@@ -114,7 +114,33 @@ From the root of the project, run the program again to see if the refactoring wo
 Hi there, I love monkeys!
 Hi there, I love dogs!
 ```
+Looking good! Now, let's mock the `HTTPRequest` interface.
+
 ### Step #2: Create the mocks
+
+The first step here is to install Gomock:
+
+```
+GO111MODULE=on go get github.com/golang/mock/mockgen@latest
+```
+
+Let's create the directory where we will maintain the `mocks` package:
+
+```
+mkdir pkg/mocks
+```
+Using the `mockgen` utility, let's generate the mocks for the `HTTPRequest` interface:
+
+```
+mockgen -source=pkg/client/client.go -destination=pkg/mocks/client.go -package=mocks
+```
+Using the `-source` option, we point it to the source file containing the target interface. The `-destination` argument tells `mockgen` where to store the generated code and the `-package` argument specifies in which package the mocks will be present.
+
+As you can see, `mockgen` created the `pkg/mocks/client.go` file which contains the mocks for the `HTTPRequest` interface.
+
+Now that we have generated the necessary mocks, we are ready to write tests that will use these mocks.
+
+### Step #3: Write the tests
 
 ### Key concepts to cover in tutorial
 #### How to generate mocks using mockgen
