@@ -38,13 +38,83 @@ There several mocking frameworks out there for Golang and all have their pros an
 
 There is no better way to learn than to get your hands dirty, so let's dive right in!
 
-### Step #1: Clone de tutorial code repository
+### Step #0: Clone de tutorial code repository
 
-Clone the following
+Clone the `github.com/walmartdigital/gomock-tutorial-code` Git repository.
 
-Let's imagine we are writing a client component that interacts with a REST API. One obvious dependency that we will have to mock in our unit tests is the HTTP client one. So to be able to mock this dependency, the first step is to write the code that uses the HTTP client to use an interface rather than to refer to a concrete type such as `http.Client`.
+```
+git clone git@github.com:walmartdigital/gomock-tutorial-code.git
+```
 
-###
+### Step #1: Create an interface for the HTTP client
+
+Take a look at the directory structure of the project:
+
+```
+.
+├── README.md
+├── go.mod
+├── go.sum
+├── main.go
+└── pkg
+    └── client
+        └── client.go
+```
+Basically, the program consists of a `main` that creates an HTTP server which serves two routes `/monkeys` and `/dogs`. There is a client component whose code lives in the `client` package and that interacts with the HTTP server. The `client` package is the *unit* we will test throughout this tutorial.
+
+From the root of the project, run the program:
+
+```
+▶ go run .                     
+Hi there, I love monkeys!
+Hi there, I love dogs!
+```
+
+As you can see from `pkg/client/client.go`, the code depends on the `github.com/go-resty/resty/v2` client library to interact with the HTTP server. This is rather impractical for doing unit testing as it requires us to set up a real HTTP server in our test code or to use some dirty hack involving monkey patching to replace the dependency in our test code.
+
+```go
+func ReadMessage(animal string) string {
+	client := resty.New()
+	resp, _ := client.R().Get(fmt.Sprintf("http://localhost:8080/%s", animal))
+	return string(resp.Body())
+}
+```
+
+To be able to mock this dependency cleanly, the first step is to replace the dependency on the concrete type `resty.Request` by a Go interface such as the following:
+
+```go
+type HTTPRequest interface {
+    Get(url string) (*resty.Response, error)
+}
+```
+
+In order for the program to run, you will have to refactor the `ReadMessage()` function to receive the `HTTPRequest` object as a parameter and pass the concrete object of type `resty.Request` from the `main` function.
+
+```go
+func ReadMessage(request HTTPRequest, animal string) string {
+	resp, _ := request.Get(fmt.Sprintf("http://localhost:8080/%s", animal))
+	return string(resp.Body())
+}
+```
+
+```go
+func main() {
+	http.HandleFunc("/monkeys", monkeys)
+	http.HandleFunc("/dogs", dogs)
+	go http.ListenAndServe(":8080", nil)
+	c := resty.New()
+	fmt.Println(client.ReadMessage(c.R(), "monkeys"))
+	fmt.Println(client.ReadMessage(c.R(), "dogs"))
+}
+```
+From the root of the project, run the program again to see if the refactoring worked:
+
+```
+▶ go run .                     
+Hi there, I love monkeys!
+Hi there, I love dogs!
+```
+### Step #2: Create the mocks
 
 ### Key concepts to cover in tutorial
 #### How to generate mocks using mockgen
