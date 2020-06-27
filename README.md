@@ -1,5 +1,5 @@
 # gomock-tutorial
-A quick and dirty Gomock tutorial to learn how to do unit testing in Go.
+A quick and dirty Gomock tutorial to learn how to mock in Go using the Gomock framework.
 
 ## Knowledge prerequisites
 
@@ -13,7 +13,7 @@ A quick and dirty Gomock tutorial to learn how to do unit testing in Go.
 
 ## What is unit testing?
 
-Unit testing is the practice of verifying the correctness of individual units or components of a software. The purpose is to validate that each unit of the software code performs as expected. A unit may be an individual function, method, procedure, module or object. Unit testing is performed by developers while coding the application. As a matter fact, Test-driven Development (TDD) stipulates that test must be written before the actual unit code. 
+Unit testing is the practice of verifying the correctness of individual units or components of a software. The purpose is to validate that each unit of the software code performs as expected. A unit may be an individual function, method, procedure, module or object. Unit testing is performed by developers while coding the application. As a matter fact, Test-driven Development (TDD) stipulates that tests must be written before the actual unit code. 
 
 ## What is mocking?
 
@@ -28,8 +28,8 @@ Mocking is a process used in unit testing to efficiently handle external depende
 
 ## Why Gomock?
 
-There several mocking frameworks out there for Golang and all have their pros and cons. We chose Gomock because of its ease of use and the following key features:
-* Automatic mock generation via a CLI
+There are several mocking frameworks out there for Golang and all have their pros and cons. We chose Gomock because of its ease of use and the following key features:
+* Automatic mock generation via a CLI (`mockgen`)
 * Argument matchers
 * Integration with Go tooling
 * Powerful expectation API
@@ -84,7 +84,7 @@ func ReadMessage(animal string) string {
 	return string(resp.Body())
 }
 ```
-When it comes to mocking **in Go**, it is best to try and group all of the functionality you want to control under the same interface. Additionally, we want to use *Dependency Injection (DI)* to be able to dynamically specify which implementation of the interface we want to use. To achieve that, we refactor the `client` package as follows:
+When it comes to mocking **in Go**, it is best to try and group all of the functionality you want to control under the same interface. Additionally, we want to use *Dependency Injection (DI)* to be able to dynamically specify which implementation of the interface we want to use. That is, we want to be able to specify from the calling code whether we want to use a real implementatio or a mock. To achieve that, we refactor the `client` package as follows:
 
 ```go
 package client
@@ -122,7 +122,7 @@ func (z *ZooClient) ReadMessage(animal string) string {
 	return string(body)
 }
 ```
-Here we specify a clean and simple interface through the `HTTPClient` one, hereby removing the need to manipulate several data structures such as `*resty.Request` and `*resty.Response` as we did when we were directly interacting with the `resty` library. The `HTTPClient` interface specifies a `Get()` function which takes a URL as argument and returns an HTTP status code, the response body and an error.
+Here, we specify the `HTTPClient` interface which is clean and simple, hereby removing the need to manipulate `resty`-specific data structures such as the `*resty.Request` and `*resty.Response` as we previously did. The `HTTPClient` interface specifies a `Get()` function which takes a URL as argument and returns an HTTP status code, the response body and an error.
 
 Additionally, we create the `ZooClient` wrapper that allows us to achieve dependency injection via the `NewZooClient()` *constructor* which accepts an `HTTPClientFactory` object whose behavior we can specify from the calling context.
 
@@ -168,7 +168,7 @@ func main() {
 	fmt.Println(zoo.ReadMessage("dogs"))
 }
 ```
-We created the `RestyClient` type (which implements the `HTTPClient` interface) as well as the associated `RestyClientFactory` which we pass to the `NewZooClient()` function when creating the client. 
+We created the `RestyClient` type (which implements the `HTTPClient` interface) and encapsulates all of the `resty` implementation-specific code. We also created the `RestyClientFactory` which we pass to the `NewZooClient()` function when creating the client. 
 
 Let's check if our program still works. From the root of the project, run the program again to see if the refactoring worked:
 
@@ -195,11 +195,11 @@ Once Gomock is installed, we use the `mockgen` utility to generate the mocks for
 ```
 mockgen -source=pkg/client/client.go -destination=pkg/mocks/client.go -package=mocks
 ```
-Using the `-source` option, we point it to the source file containing the target interface. The `-destination` argument tells `mockgen` where to store the generated code and the `-package` argument specifies in which package the mocks will be present.
+Using the `-source` option, we point it to the source file containing the target interface. The `-destination` argument tells `mockgen` where to store the generated code and the `-package` argument specifies what package the mocks should be part of.
 
-As you can see, `mockgen` created the `pkg/mocks/client.go` file which contains the mock for the `HTTPClient` interface called `MockHTTPClient` as well as the function to create a new mock `NewMockHTTPClient()`. It also did the same for the `HTTPClientFactory` interface.
+As you can see, `mockgen` created the `pkg/mocks/client.go` file which contains the mock for the `HTTPClient` interface called `MockHTTPClient` as well as the function to create a new mock `NewMockHTTPClient()`. It also generated similar code for the `HTTPClientFactory` interface.
 
-Now that we have generated the necessary mocks, we are ready to write tests that will use these mocks.
+Now that we have created the necessary mocks, we are ready to write tests that will use these mocks.
 
 ### Step #3: Write the tests
 
@@ -249,7 +249,7 @@ var _ = Describe("Read message", func() {
 	})
 })
 ```
-Here we set up a simple test to exercise the *happy path* of our program. We create a `MockHTTPClientFactory` (which was generated by `mockgen`) and we pass it to the `NewZooClient()` function to create the client.
+Here, we set up a simple test to exercise the *happy path* of our program. We create a `MockHTTPClientFactory` (which was generated by `mockgen`) and we pass it to the `NewZooClient()` function to create the client.
 
 ```
 git checkout step-3a
@@ -272,9 +272,11 @@ FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.195s
 ```
 We are getting an error telling us that there was an unexpected call to the `*mocks.MockHTTPClientFactory.Create([])` function which is called by the `client.NewZooClient()` call in our test. 
 
-### Please meet `gomock`'s expectation API!!!
+[Rolling drums...]
 
-What we need to do fix this test is to use the `*mocks.MockHTTPClientFactory.EXPECT()` function to instruct `gomock` how we expect the `Create()` function to behave. We modify the test as follows:
+### Please meet `gomock`'s expectation API!!! :fireworks:
+
+What we need to do fix this test is to use the `*mocks.MockHTTPClientFactory.EXPECT()` function to instruct `gomock` how we expect the `Create()` function to behave. Therefore, we modify the test as follows:
 
 ```go
 var _ = Describe("Read message", func() {
