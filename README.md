@@ -70,7 +70,7 @@ Hi there, I love monkeys!
 Hi there, I love dogs!
 ```
 
-As you can see from `pkg/client/client.go`, the code depends on the `github.com/go-resty/resty/v2` client library to interact with the HTTP server. This is rather impractical for doing unit testing as it requires us to set up a real HTTP server in our test code or to use some dirty hack involving monkey patching to replace the dependency in our test code.
+As you can see from `pkg/client/client.go`, the code depends on the `github.com/go-resty/resty/v2` client library to interact with the HTTP server. This is rather impractical for doing unit testing as it requires us to set up a real HTTP server in our test code or to use some dirty hack involving *monkey patching* to replace the dependency in our test code.
 
 ```go
 func ReadMessage(animal string) string {
@@ -79,42 +79,100 @@ func ReadMessage(animal string) string {
 	return string(resp.Body())
 }
 ```
-
-To be able to mock this dependency cleanly, the first step is to replace the dependency on the concrete type `resty.Request` by a Go interface such as the following:
+When it comes to mocking **in Go**, it is best to try and group all of the functionality you want to control under the same interface. Additionally, we want to use *Dependency Injection (DI)* to be able to dynamically specify which implementation of the interface we want to use. To achieve that, we refactor the `client` package as follows:
 
 ```go
-type HTTPRequest interface {
-    Get(url string) (*resty.Response, error)
+package client
+
+import (
+	"fmt"
+)
+
+// HTTPClient ...
+type HTTPClient interface {
+	Get(url string) (int, []byte, error)
+}
+
+// HTTPClientFactory ...
+type HTTPClientFactory interface {
+	Create() HTTPClient
+}
+
+// ZooClient ...
+type ZooClient struct {
+	client HTTPClient
+}
+
+// NewZooClient ...
+func NewZooClient(factory HTTPClientFactory) *ZooClient {
+	client := ZooClient{
+		client: factory.Create(),
+	}
+	return &client
+}
+
+// ReadMessage ...
+func (z *ZooClient) ReadMessage(animal string) string {
+	_, body, _ := z.client.Get(fmt.Sprintf("http://localhost:8080/%s", animal))
+	return string(body)
 }
 ```
+Here we specify a clean and simple interface through the `HTTPClient` one, hereby removing the need to manipulate several data structures such as `*resty.Request` and `*resty.Response` as we did when we were directly interacting with the `resty` library. The `HTTPClient` interface specifies a `Get()` function which takes a URL as argument and returns an HTTP status code, the response body and an error.
 
-In order for the program to run, you will have to refactor the `ReadMessage()` function to receive the `HTTPRequest` object as a parameter and pass the concrete object of type `resty.Request` from the `main` function.
+Additionally, we create the `ZooClient` wrapper that allows us to achieve dependency injection via the `NewZooClient()` *constructor* which accepts an `HTTPClientFactory` object whose behavior we can specify from the calling context.
+
+As a result of the above changes, we also need to refactor the `main` package:
 
 ```go
-func ReadMessage(request HTTPRequest, animal string) string {
-	resp, _ := request.Get(fmt.Sprintf("http://localhost:8080/%s", animal))
-	return string(resp.Body())
+// RestyClient ...
+type RestyClient struct {
+	client *resty.Client
 }
-```
 
-```go
+// NewRestyClient ...
+func NewRestyClient() *RestyClient {
+	r := RestyClient{
+		client: resty.New(),
+	}
+	return &r
+}
+
+// Get ...
+func (r RestyClient) Get(url string) (int, []byte, error) {
+	resp, err := r.client.R().Get(url)
+	body := resp.Body()
+	return resp.StatusCode(), body, err
+}
+
+// RestyClientFactory ...
+type RestyClientFactory struct{}
+
+// Create ...
+func (f RestyClientFactory) Create() client.HTTPClient {
+	r := NewRestyClient()
+	return *r
+}
+
 func main() {
 	http.HandleFunc("/monkeys", monkeys)
 	http.HandleFunc("/dogs", dogs)
 	go http.ListenAndServe(":8080", nil)
-	c := resty.New()
-	fmt.Println(client.ReadMessage(c.R(), "monkeys"))
-	fmt.Println(client.ReadMessage(c.R(), "dogs"))
+
+	zoo := client.NewZooClient(RestyClientFactory{})
+	fmt.Println(zoo.ReadMessage("monkeys"))
+	fmt.Println(zoo.ReadMessage("dogs"))
 }
 ```
-From the root of the project, run the program again to see if the refactoring worked:
+We created the `RestyClient` type (which implements the `HTTPClient` interface) as well as the associated `RestyClientFactory` which we pass to the `NewZooClient()` function when creating the client. 
+
+Let's check if our program still works. From the root of the project, run the program again to see if the refactoring worked:
 
 ```
 ▶ go run .                     
 Hi there, I love monkeys!
 Hi there, I love dogs!
 ```
-Looking good! Now, let's mock the `HTTPRequest` interface.
+Looking good! Now, let's move on to mocking the `HTTPClient` interface.
 
 ### Step #2: Create the mocks
 
@@ -123,29 +181,166 @@ The first step here is to install Gomock:
 ```
 GO111MODULE=on go get github.com/golang/mock/mockgen@latest
 ```
-
-Let's create the directory where we will maintain the `mocks` package:
-
-```
-mkdir pkg/mocks
-```
-Using the `mockgen` utility, let's generate the mocks for the `HTTPRequest` interface:
+Once Gomock is installed, we use the `mockgen` utility to generate the mocks for the `HTTPClient` interface:
 
 ```
 mockgen -source=pkg/client/client.go -destination=pkg/mocks/client.go -package=mocks
 ```
 Using the `-source` option, we point it to the source file containing the target interface. The `-destination` argument tells `mockgen` where to store the generated code and the `-package` argument specifies in which package the mocks will be present.
 
-As you can see, `mockgen` created the `pkg/mocks/client.go` file which contains the mocks for the `HTTPRequest` interface.
+As you can see, `mockgen` created the `pkg/mocks/client.go` file which contains the mock for the `HTTPClient` interface called `MockHTTPClient` as well as the function to create a new mock `NewMockHTTPClient()`. It also did the same for the `HTTPClientFactory` interface.
 
 Now that we have generated the necessary mocks, we are ready to write tests that will use these mocks.
 
 ### Step #3: Write the tests
 
+Let's a create the `pkg/client/client_test.go` test file for the client package:
+
+```go
+package client_test
+
+import (
+	"testing"
+
+	"github.com/golang/mock/gomock"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"github.com/walmartdigital/gomock-tutorial-code/pkg/client"
+	"github.com/walmartdigital/gomock-tutorial-code/pkg/mocks"
+)
+
+var ctrl *gomock.Controller
+
+func TestAll(t *testing.T) {
+	ctrl = gomock.NewController(t)
+	defer ctrl.Finish()
+
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Client tests")
+}
+
+var _ = Describe("Read message", func() {
+	var (
+		fakeHTTPClientFactory *mocks.MockHTTPClientFactory
+		zooClient             *client.ZooClient
+	)
+
+	BeforeEach(func() {
+		fakeHTTPClientFactory = mocks.NewMockHTTPClientFactory(ctrl)
+		zooClient = client.NewZooClient(fakeHTTPClientFactory)
+	})
+
+	It("should read a message from the server", func() {
+		msg := zooClient.ReadMessage("dogs")
+		Expect(msg).To(Equal("Hi there, I love dogs!"))
+	})
+})
+```
+Here we set up a simple test to exercise the *happy path* of our program. We create a `MockHTTPClientFactory` (which was generated by `mockgen`) and we pass it to the `NewZooClient()` function to create the client.
+
+Let's run the test and see what happens! From the `pkg/client` folder, run `go test`:
+
+```
+▶ go test
+Running Suite: Client tests
+===========================
+Random Seed: 1593273859
+Will run 1 of 1 specs
+
+--- FAIL: TestAll (0.00s)
+    client.go:25: Unexpected call to *mocks.MockHTTPClientFactory.Create([]) at /Users/vn0q31j/code/underworld/gomock-tutorial-code/pkg/mocks/client.go:78 because: there are no expected calls of the method "Create" for that receiver
+FAIL
+exit status 1
+FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.195s
+```
+We are getting an error telling us that there was an unexpected call to the `*mocks.MockHTTPClientFactory.Create([])` function which is called by the `client.NewZooClient()` call in our test. 
+
+### Please meet `gomock`'s expectation API!!!
+
+What we need to do fix this test is to use the `*mocks.MockHTTPClientFactory.EXPECT()` function to instruct `gomock` how we expect the `Create()` function to behave. We modify the test as follows:
+
+```go
+var _ = Describe("Read message", func() {
+	var (
+		fakeHTTPClient        *mocks.MockHTTPClient
+		fakeHTTPClientFactory *mocks.MockHTTPClientFactory
+		zooClient             *client.ZooClient
+	)
+
+	BeforeEach(func() {
+		fakeHTTPClient = mocks.NewMockHTTPClient(ctrl)
+        fakeHTTPClientFactory = mocks.NewMockHTTPClientFactory(ctrl)
+        
+		fakeHTTPClientFactory.EXPECT().Create().Return(
+			fakeHTTPClient,
+        ).Times(1)
+        
+		zooClient = client.NewZooClient(fakeHTTPClientFactory)
+	})
+
+	It("should read a message from the server", func() {
+		msg := zooClient.ReadMessage("dogs")
+		Expect(msg).To(Equal("Hi there, I love dogs!"))
+	})
+})
+```
+Here we instruct `gomock` that we expect the `MockHTTPClientFactory.Create()` function to be called **exactly once**, with no argument and to return `fakeHTTPClient`.
+
+Let's run the test again and see what happens:
+
+```
+▶ go test
+Running Suite: Client tests
+===========================
+Random Seed: 1593274259
+Will run 1 of 1 specs
+
+--- FAIL: TestAll (0.00s)
+    client.go:32: Unexpected call to *mocks.MockHTTPClient.Get([http://localhost:8080/dogs]) at /Users/vn0q31j/code/underworld/gomock-tutorial-code/pkg/mocks/client.go:39 because: there are no expected calls of the method "Get" for that receiver
+FAIL
+exit status 1
+FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.211s
+```
+Oops, it failed again... but for another reason. The error we're getting now is that there was an unexpected call to `*mocks.MockHTTPClient.Get()`. Let's fix that by adding the following `EXPECT()` call:
+
+```go
+fakeHTTPClient.EXPECT().Get("http://localhost:8080/dogs").Return(
+    200,
+    []byte("Hi there, I love dogs!"),
+    nil,
+).Times(1)
+msg := zooClient.ReadMessage("dogs")
+Expect(msg).To(Equal("Hi there, I love dogs!"))
+```
+Here we instruct `gomock` to expect `Get()` to be called **once** with the `"http://localhost:8080/dogs"` URL and to return:
+* The `200` HTTP response code
+* A `byte` arrary corresponding to `"Hi there, I love dogs!"`
+* A nil `error`
+
+Let's run the test again and see what happens!
+
+```
+▶ go test
+Running Suite: Client tests
+===========================
+Random Seed: 1593274894
+Will run 1 of 1 specs
+
+•
+Ran 1 of 1 Specs in 0.000 seconds
+SUCCESS! -- 1 Passed | 0 Failed | 0 Pending | 0 Skipped
+PASS
+ok      github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.225s
+```
+
+It worked! We just created our first test mocking our HTTP client dependency and using the `gomock` expectation API. Let's add some more tests!
+
+
+
 ### Key concepts to cover in tutorial
-#### How to generate mocks using mockgen
-#### Using Expect() to expect function calls
-#### Using Return() to control return values
+~~How to generate mocks using mockgen~~
+~~#### Using Expect() to expect function calls~~
+~~#### Using Return() to control return values~~
 #### Using setAttribute() to control the value of attributes passed by reference
 #### Mention inOrder() to specify the order in which function should be called
 
