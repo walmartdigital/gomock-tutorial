@@ -43,7 +43,7 @@ There is no better way to learn than to get your hands dirty, so let's dive righ
 Clone the `github.com/walmartdigital/gomock-tutorial-code` Git repository.
 
 ```
-git clone git@github.com:walmartdigital/gomock-tutorial-code.git
+git clone https://github.com/walmartdigital/gomock-tutorial-code.git
 ```
 **Note that there are instructions throughout the tutorial indicating which Git tag to use in order to start each example/step from a clean state.**
 
