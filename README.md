@@ -272,7 +272,7 @@ FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.195s
 ```
 We are getting an error telling us that there was an unexpected call to the `*mocks.MockHTTPClientFactory.Create([])` function which is called by the `client.NewZooClient()` call in our test. 
 
-[Rolling drums...]
+[ Sound of rolling drums... ]
 
 ### Please meet `gomock`'s expectation API!!! :fireworks:
 
@@ -448,7 +448,7 @@ exit status 1
 FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.235s
 ```
 
-It seems that we have more work to do so we refactor the ReadMessage function fit the tests needs.
+It seems that we have more work to do so we refactor the ReadMessage function to fit the tests' needs.
 
 ```go
 func (z *ZooClient) ReadMessage(animal string) string {
