@@ -448,7 +448,46 @@ exit status 1
 FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.235s
 ```
 
-Looks like we have some more work to do!!
+Finally we modify the expect in the tests.
+
+```go
+It("should answer that it doesn't know the provided type of animals", func() {
+  fakeHTTPClient.EXPECT().Get("http://localhost:8080/elephants").Return(
+    404,
+    []byte("Not found"),
+    nil,
+    ).Times(1)
+  msg := zooClient.ReadMessage("elephants")
+  Expect(msg).To(Equal("Not found"))
+})
+
+It("should answer that it doesn't know the provided type of animals", func() {
+  fakeHTTPClient.EXPECT().Get("http://localhost:8080/dogs").Return(
+    -1,
+    nil,
+    errors.New("Could not connect to server"),
+    ).Times(1)
+    msg := zooClient.ReadMessage("dogs")
+    Expect(msg).To(Equal(""))
+})
+```
+```
+git checkout step-4b
+```
+Running the tests again yields the following output:
+```
+▶ go test
+Running Suite: Client tests
+===========================
+Random Seed: 1593702832
+Will run 3 of 3 specs
+
+•••
+Ran 3 of 3 Specs in 0.000 seconds
+SUCCESS! -- 3 Passed | 0 Failed | 0 Pending | 0 Skipped
+PASS
+ok      github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.025s
+```
 
 ### Recap
 
