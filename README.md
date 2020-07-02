@@ -448,7 +448,7 @@ exit status 1
 FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.235s
 ```
 
-Finally we modify the expect in the tests.
+It seems that we have more work to do so we modify the tests to make them pass.
 
 ```go
 It("should answer that it doesn't know the provided type of animals", func() {
