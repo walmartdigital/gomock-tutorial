@@ -448,28 +448,30 @@ exit status 1
 FAIL    github.com/walmartdigital/gomock-tutorial-code/pkg/client       0.235s
 ```
 
-It seems that we have more work to do so we modify the tests to make them pass.
+It seems that we have more work to do so we refactor the ReadMessage function fit the tests needs.
 
 ```go
-It("should answer that it doesn't know the provided type of animals", func() {
-  fakeHTTPClient.EXPECT().Get("http://localhost:8080/elephants").Return(
-    404,
-    []byte("Not found"),
-    nil,
-    ).Times(1)
-  msg := zooClient.ReadMessage("elephants")
-  Expect(msg).To(Equal("Not found"))
-})
+func (z *ZooClient) ReadMessage(animal string) string {
+  statusCode, body, err := z.client.Get(fmt.Sprintf("http://localhost:8080/%s", animal))
 
-It("should answer that it doesn't know the provided type of animals", func() {
-  fakeHTTPClient.EXPECT().Get("http://localhost:8080/dogs").Return(
-    -1,
-    nil,
-    errors.New("Could not connect to server"),
-    ).Times(1)
-    msg := zooClient.ReadMessage("dogs")
-    Expect(msg).To(Equal(""))
-})
+  if err != nil {
+    return string("Hi there, the zoo is closed!")
+  }
+
+  var singularDictionary = map[string]string{
+    "elephants": "elephant",
+    "dogs":      "dog",
+  }
+
+  switch statusCode {
+    case 200:
+      return string(body)
+    case 404:
+      return fmt.Sprintf("Hi there, what is an %s!", singularDictionary[animal])
+    default:
+      return string(body)
+  }
+}
 ```
 ```
 git checkout step-4b
